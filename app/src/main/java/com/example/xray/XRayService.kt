@@ -23,6 +23,7 @@ class XRayService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val overlay = OverlayController(this)
+    private val bubble = BubbleController(this) { onBubbleTap() }
     private var lastCaptureTime = 0L
     private var busy = false
     private var pendingOverlay = false
@@ -30,6 +31,8 @@ class XRayService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        overlay.onDismissed = { restoreBubble() }
+        applyBubble()
         listener?.invoke()
     }
 
@@ -40,10 +43,13 @@ class XRayService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         overlay.dismiss()
+        bubble.remove()
+        restoreBubble()
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
         overlay.dismiss()
+        bubble.remove()
         if (instance === this) instance = null
         listener?.invoke()
         return super.onUnbind(intent)
@@ -51,8 +57,37 @@ class XRayService : AccessibilityService() {
 
     override fun onDestroy() {
         overlay.dismiss()
+        bubble.remove()
         if (instance === this) instance = null
         super.onDestroy()
+    }
+
+    private fun bubbleWanted(): Boolean {
+        return getSharedPreferences("xray", MODE_PRIVATE).getBoolean("bubble", false)
+    }
+
+    fun applyBubble() {
+        if (bubbleWanted()) {
+            if (!overlay.isShowing()) bubble.show()
+        } else {
+            bubble.remove()
+        }
+    }
+
+    private fun restoreBubble() {
+        if (bubbleWanted()) {
+            if (!overlay.isShowing()) bubble.show()
+        } else {
+            bubble.remove()
+        }
+    }
+
+    private fun onBubbleTap() {
+        if (busy) {
+            Toast.makeText(this, "Still working. Wait a moment.", Toast.LENGTH_SHORT).show()
+            return
+        }
+        xray(150)
     }
 
     fun captureDelayed(delayMs: Long) {
@@ -61,10 +96,12 @@ class XRayService : AccessibilityService() {
 
     fun xray(delayMs: Long) {
         overlay.dismiss()
+        bubble.hide()
         val wait = if (delayMs < 200) 200L else delayMs
         handler.postDelayed({
             if (busy) {
                 Toast.makeText(this, "Still working. Wait a moment.", Toast.LENGTH_SHORT).show()
+                restoreBubble()
             } else {
                 pendingOverlay = true
                 capture()
@@ -74,12 +111,14 @@ class XRayService : AccessibilityService() {
 
     fun capture() {
         if (busy) {
-            finish(null, "Still working. Wait a moment.")
+            Toast.makeText(this, "Still working. Wait a moment.", Toast.LENGTH_SHORT).show()
             return
         }
         val now = SystemClock.elapsedRealtime()
         if (now - lastCaptureTime < 1100) {
-            finish(null, "Too fast. Wait 1 second and try again.")
+            pendingOverlay = false
+            Toast.makeText(this, "Too fast. Wait 1 second and try again.", Toast.LENGTH_SHORT).show()
+            restoreBubble()
             return
         }
         busy = true
@@ -152,11 +191,14 @@ class XRayService : AccessibilityService() {
                     lastBitmap = null
                     if (r.blocks.isEmpty()) {
                         Toast.makeText(this, "No text found on this screen.", Toast.LENGTH_SHORT).show()
+                        restoreBubble()
                     } else {
                         overlay.show(r, w, h)
+                        if (!overlay.isShowing()) restoreBubble()
                     }
                 } else {
                     Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
+                    restoreBubble()
                 }
                 listener?.invoke()
             },
@@ -166,6 +208,7 @@ class XRayService : AccessibilityService() {
                 lastResult = null
                 lastStatus = "Text reading failed: $msg"
                 Toast.makeText(this, lastStatus, Toast.LENGTH_LONG).show()
+                restoreBubble()
                 listener?.invoke()
             }
         )
@@ -205,6 +248,7 @@ class XRayService : AccessibilityService() {
         lastResult = null
         lastStatus = status
         Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
+        if (!pendingOverlay) restoreBubble()
         listener?.invoke()
     }
 }

@@ -168,6 +168,7 @@ class BoxesView(
 class OverlayController(private val service: AccessibilityService) {
 
     private var root: OverlayRoot? = null
+    var onDismissed: (() -> Unit)? = null
 
     private val green = Color.parseColor("#00FF9C")
     private val cyan = Color.parseColor("#00E5FF")
@@ -181,7 +182,8 @@ class OverlayController(private val service: AccessibilityService) {
         root = null
         try {
             val wm = service.getSystemService(Context.WINDOW_SERVICE) as WindowManager
-            wm.removeView(r)
+           wm.removeView(r)
+            onDismissed?.invoke()
         } catch (e: Exception) {
         }
     }

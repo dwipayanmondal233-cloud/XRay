@@ -25,6 +25,7 @@ class MainActivity : Activity() {
     private lateinit var resultText: TextView
     private lateinit var image: ImageView
     private lateinit var scriptBtn: Button
+    private lateinit var bubbleBtn: Button
     private lateinit var listBox: LinearLayout
 
     private val green = Color.parseColor("#00FF9C")
@@ -62,6 +63,25 @@ class MainActivity : Activity() {
         root.addView(makeButton("OPEN ACCESSIBILITY SETTINGS", cyan) {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         })
+
+        bubbleBtn = makeButton("", green) {
+            val now = prefs().getBoolean("bubble", false)
+            prefs().edit().putBoolean("bubble", !now).apply()
+            val svc = XRayService.instance
+            if (svc == null) {
+                if (!now) {
+                    Toast.makeText(
+                        this,
+                        "Bubble will appear once the XRay service is ON.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } else {
+                svc.applyBubble()
+            }
+            render()
+        }
+        root.addView(bubbleBtn)
 
         scriptBtn = makeButton("", cyan) {
             val now = prefs().getBoolean("deva", false)
@@ -182,6 +202,12 @@ class MainActivity : Activity() {
         } else {
             serviceText.text = "SERVICE: OFF"
             serviceText.setTextColor(Color.parseColor("#FF4D4D"))
+        }
+
+        if (prefs().getBoolean("bubble", false)) {
+            bubbleBtn.text = "FLOATING BUBBLE: ON (tap to turn off)"
+        } else {
+            bubbleBtn.text = "FLOATING BUBBLE: OFF (tap to turn on)"
         }
 
         if (prefs().getBoolean("deva", false)) {
