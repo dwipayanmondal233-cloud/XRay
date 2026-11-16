@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="service_description">XRay takes a screenshot only when you tap its button, reads the text on it, and never saves it.</string>
+</resources>
