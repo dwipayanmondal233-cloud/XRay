@@ -2,6 +2,7 @@ package com.example.xray
 
 import android.accessibilityservice.AccessibilityService
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Bitmap
 import android.os.Handler
 import android.os.Looper
@@ -21,8 +22,10 @@ class XRayService : AccessibilityService() {
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private val overlay = OverlayController(this)
     private var lastCaptureTime = 0L
     private var busy = false
+    private var pendingOverlay = false
 
     override fun onServiceConnected() {
         super.onServiceConnected()
@@ -34,19 +37,39 @@ class XRayService : AccessibilityService() {
 
     override fun onInterrupt() {}
 
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        overlay.dismiss()
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
+        overlay.dismiss()
         if (instance === this) instance = null
         listener?.invoke()
         return super.onUnbind(intent)
     }
 
     override fun onDestroy() {
+        overlay.dismiss()
         if (instance === this) instance = null
         super.onDestroy()
     }
 
     fun captureDelayed(delayMs: Long) {
         handler.postDelayed({ capture() }, delayMs)
+    }
+
+    fun xray(delayMs: Long) {
+        overlay.dismiss()
+        val wait = if (delayMs < 200) 200L else delayMs
+        handler.postDelayed({
+            if (busy) {
+                Toast.makeText(this, "Still working. Wait a moment.", Toast.LENGTH_SHORT).show()
+            } else {
+                pendingOverlay = true
+                capture()
+            }
+        }, wait)
     }
 
     fun capture() {
@@ -84,6 +107,7 @@ class XRayService : AccessibilityService() {
                             finish(null, "Could not read the screenshot image.")
                         } else if (isBlank(bmp)) {
                             busy = false
+                            pendingOverlay = false
                             finish(
                                 bmp,
                                 "Blank capture (" + bmp.width + "x" + bmp.height +
@@ -108,6 +132,8 @@ class XRayService : AccessibilityService() {
     }
 
     private fun runOcr(bmp: Bitmap) {
+        val w = bmp.width
+        val h = bmp.height
         val deva = getSharedPreferences("xray", MODE_PRIVATE).getBoolean("deva", false)
         OcrEngine.run(
             bmp,
@@ -121,11 +147,22 @@ class XRayService : AccessibilityService() {
                     "Found " + r.lineCount() + " lines in " + r.millis + " ms (" + r.script + ")"
                 }
                 lastStatus = status
-                Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
+                if (pendingOverlay) {
+                    pendingOverlay = false
+                    lastBitmap = null
+                    if (r.blocks.isEmpty()) {
+                        Toast.makeText(this, "No text found on this screen.", Toast.LENGTH_SHORT).show()
+                    } else {
+                        overlay.show(r, w, h)
+                    }
+                } else {
+                    Toast.makeText(this, status, Toast.LENGTH_SHORT).show()
+                }
                 listener?.invoke()
             },
             onError = { msg ->
                 busy = false
+                pendingOverlay = false
                 lastResult = null
                 lastStatus = "Text reading failed: $msg"
                 Toast.makeText(this, lastStatus, Toast.LENGTH_LONG).show()
@@ -163,6 +200,7 @@ class XRayService : AccessibilityService() {
     }
 
     private fun finish(bmp: Bitmap?, status: String) {
+        if (bmp == null) pendingOverlay = false
         lastBitmap = bmp
         lastResult = null
         lastStatus = status

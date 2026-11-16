@@ -90,6 +90,17 @@ class MainActivity : Activity() {
             }
         })
 
+        root.addView(makeButton("X-RAY OVERLAY IN 3s", green) {
+            val svc = XRayService.instance
+            if (svc == null) {
+                Toast.makeText(this, "Turn on XRay in Accessibility first.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "X-ray in 3 seconds. Open any app now.", Toast.LENGTH_LONG).show()
+                svc.xray(3000)
+                moveTaskToBack(true)
+            }
+        })
+
         root.addView(makeButton("COPY ALL TEXT", green) {
             val r = XRayService.lastResult
             if (r == null || r.blocks.isEmpty()) {
