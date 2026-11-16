@@ -1,23 +1,75 @@
 package com.example.xray
 
+import android.animation.ValueAnimator
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.Shader
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.provider.Settings
 import android.view.Gravity
 import android.view.View
+import android.view.animation.LinearInterpolator
 import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+
+class ScanBar(context: Context) : View(context) {
+
+    private val base = Paint().apply { color = Color.parseColor("#1E3A34") }
+    private val seg = Paint()
+    private var p = 0f
+    private var anim: ValueAnimator? = null
+
+    fun start() {
+        if (anim != null) return
+        val a = ValueAnimator.ofFloat(0f, 1f)
+        a.duration = 1800
+        a.repeatCount = ValueAnimator.INFINITE
+        a.interpolator = LinearInterpolator()
+        a.addUpdateListener {
+            p = it.animatedValue as Float
+            invalidate()
+        }
+        a.start()
+        anim = a
+    }
+
+    fun stop() {
+        anim?.cancel()
+        anim = null
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        val w = width.toFloat()
+        val h = height.toFloat()
+        canvas.drawRect(0f, 0f, w, h, base)
+        val segW = w * 0.3f
+        val x = -segW + p * (w + segW)
+        seg.shader = LinearGradient(
+            x, 0f, x + segW, 0f,
+            intArrayOf(
+                Color.parseColor("#0000FF9C"),
+                Color.parseColor("#00FF9C"),
+                Color.parseColor("#0000E5FF")
+            ),
+            floatArrayOf(0f, 0.5f, 1f),
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(0f, 0f, w, h, seg)
+    }
+}
 
 class MainActivity : Activity() {
 
@@ -30,6 +82,7 @@ class MainActivity : Activity() {
     private lateinit var sensBtn: Button
     private lateinit var regionBtn: Button
     private lateinit var listBox: LinearLayout
+    private lateinit var scanBar: ScanBar
 
     private val green = Color.parseColor("#00FF9C")
     private val cyan = Color.parseColor("#00E5FF")
@@ -50,22 +103,40 @@ class MainActivity : Activity() {
 
         val title = TextView(this).apply {
             text = "XRAY"
-            textSize = 32f
-            typeface = Typeface.MONOSPACE
+            textSize = 34f
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
             setTextColor(green)
         }
         root.addView(title)
 
+        val sub = TextView(this).apply {
+            text = "> instant screen x-ray_"
+            textSize = 13f
+            typeface = Typeface.MONOSPACE
+            setTextColor(cyan)
+        }
+        root.addView(sub)
+
+        scanBar = ScanBar(this)
+        val barLp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(3)
+        )
+        barLp.topMargin = dp(8)
+        root.addView(scanBar, barLp)
+
         serviceText = TextView(this).apply {
             textSize = 16f
             typeface = Typeface.MONOSPACE
-            setPadding(0, dp(8), 0, dp(8))
+            setPadding(0, dp(12), 0, dp(4))
         }
         root.addView(serviceText)
 
         root.addView(makeButton("OPEN ACCESSIBILITY SETTINGS", cyan) {
             startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
         })
+
+        section(root, "TRIGGERS")
 
         bubbleBtn = makeButton("", green) {
             val now = prefs().getBoolean("bubble", false)
@@ -114,12 +185,52 @@ class MainActivity : Activity() {
         }
         root.addView(sensBtn)
 
+        val tip = TextView(this).apply {
+            text = "Quick Settings tile: swipe down twice, tap the pencil, drag the XRay tile into your panel."
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.parseColor("#6B8A80"))
+            setPadding(0, dp(8), 0, 0)
+        }
+        root.addView(tip)
+
+        section(root, "SCAN SETTINGS")
+
+        fun regionLabel(on: Boolean): String {
+            return if (on) {
+                "REGION MODE: ON (drag a box, then scan)"
+            } else {
+                "REGION MODE: OFF (scan full screen)"
+            }
+        }
+
+        regionBtn = makeButton("", cyan) {
+            val now = prefs().getBoolean("region", false)
+            prefs().edit().putBoolean("region", !now).apply()
+            regionBtn.text = regionLabel(!now)
+        }
+        regionBtn.text = regionLabel(prefs().getBoolean("region", false))
+        root.addView(regionBtn)
+
         scriptBtn = makeButton("", cyan) {
             val now = prefs().getBoolean("deva", false)
             prefs().edit().putBoolean("deva", !now).apply()
             render()
         }
         root.addView(scriptBtn)
+
+        section(root, "TEST")
+
+        root.addView(makeButton("X-RAY OVERLAY IN 3s", green) {
+            val svc = XRayService.instance
+            if (svc == null) {
+                Toast.makeText(this, "Turn on XRay in Accessibility first.", Toast.LENGTH_LONG).show()
+            } else {
+                Toast.makeText(this, "X-ray in 3 seconds. Open any app now.", Toast.LENGTH_LONG).show()
+                svc.xray(3000)
+                moveTaskToBack(true)
+            }
+        })
 
         root.addView(makeButton("CAPTURE NOW (THIS SCREEN)", green) {
             val svc = XRayService.instance
@@ -141,32 +252,7 @@ class MainActivity : Activity() {
             }
         })
 
-        root.addView(makeButton("X-RAY OVERLAY IN 3s", green) {
-            val svc = XRayService.instance
-            if (svc == null) {
-                Toast.makeText(this, "Turn on XRay in Accessibility first.", Toast.LENGTH_LONG).show()
-            } else {
-                Toast.makeText(this, "X-ray in 3 seconds. Open any app now.", Toast.LENGTH_LONG).show()
-                svc.xray(3000)
-                moveTaskToBack(true)
-            }
-        })
-
-        fun regionLabel(on: Boolean): String {
-            return if (on) {
-                "REGION MODE: ON (drag a box, then scan)"
-            } else {
-                "REGION MODE: OFF (scan full screen)"
-            }
-        }
-
-        regionBtn = makeButton("", cyan) {
-            val now = prefs().getBoolean("region", false)
-            prefs().edit().putBoolean("region", !now).apply()
-            regionBtn.text = regionLabel(!now)
-        }
-        regionBtn.text = regionLabel(prefs().getBoolean("region", false))
-        root.addView(regionBtn)
+        section(root, "RESULT")
 
         root.addView(makeButton("OPEN HISTORY", cyan) {
             startActivity(Intent(this, HistoryActivity::class.java))
@@ -223,23 +309,29 @@ class MainActivity : Activity() {
         imgLp.topMargin = dp(12)
         root.addView(image, imgLp)
 
-        val tip = TextView(this).apply {
-            text = "> Quick Settings tile: swipe down twice, tap the pencil, drag the XRay tile into your panel."
+        section(root, "HELP")
+
+        root.addView(makeButton("HELP AND PROBLEMS", cyan) {
+            startActivity(Intent(this, HelpActivity::class.java))
+        })
+
+        val privacy = TextView(this).apply {
+            text = "> Privacy: screenshots stay in memory only. Nothing is saved or sent anywhere. No internet permission."
             textSize = 12f
             typeface = Typeface.MONOSPACE
             setTextColor(Color.parseColor("#6B8A80"))
             setPadding(0, dp(16), 0, 0)
         }
-        root.addView(tip)
+        root.addView(privacy)
 
-        val privacy = TextView(this).apply {
-            text = "> Privacy: screenshots stay in memory only. Nothing is saved or sent anywhere."
+        val ver = TextView(this).apply {
+            text = "> XRay v1.0"
             textSize = 12f
             typeface = Typeface.MONOSPACE
             setTextColor(Color.parseColor("#6B8A80"))
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(4), 0, 0)
         }
-        root.addView(privacy)
+        root.addView(ver)
 
         val scroll = ScrollView(this)
         scroll.setBackgroundColor(bg)
@@ -250,12 +342,24 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         XRayService.listener = { render() }
+        scanBar.start()
         render()
     }
 
     override fun onPause() {
         super.onPause()
         XRayService.listener = null
+        scanBar.stop()
+    }
+
+    private fun section(root: LinearLayout, label: String) {
+        val tv = TextView(this)
+        tv.text = "> $label"
+        tv.textSize = 13f
+        tv.typeface = Typeface.MONOSPACE
+        tv.setTextColor(green)
+        tv.setPadding(0, dp(20), 0, dp(2))
+        root.addView(tv)
     }
 
     private fun copy(text: String) {

@@ -30,6 +30,7 @@ class XRayService : AccessibilityService() {
     private val handler = Handler(Looper.getMainLooper())
     private val overlay = OverlayController(this)
     private val regionSel = RegionSelector(this)
+    private val scan = ScanOverlay(this)
     private val bubble = BubbleController(this) { onBubbleTap() }
     private var lastCaptureTime = 0L
     private var busy = false
@@ -53,6 +54,7 @@ class XRayService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         overlay.dismiss()
+        scan.dismiss()
         if (regionSel.isShowing()) regionSel.dismiss()
         bubble.remove()
         restoreBubble()
@@ -62,6 +64,7 @@ class XRayService : AccessibilityService() {
         stopShake()
         overlay.dismiss()
         regionSel.dismiss()
+        scan.dismiss()
         bubble.remove()
         if (instance === this) instance = null
         listener?.invoke()
@@ -72,6 +75,7 @@ class XRayService : AccessibilityService() {
         stopShake()
         overlay.dismiss()
         regionSel.dismiss()
+        scan.dismiss()
         bubble.remove()
         if (instance === this) instance = null
         super.onDestroy()
@@ -277,11 +281,13 @@ class XRayService : AccessibilityService() {
                 oy = 0
             }
         }
+        if (pendingOverlay) scan.show()
         val deva = prefs().getBoolean("deva", false)
         OcrEngine.run(
             input,
             deva,
             onDone = { raw ->
+                scan.dismiss()
                 busy = false
                 val r = if (ox != 0 || oy != 0) raw.offset(ox, oy) else raw
                 lastResult = r
@@ -310,6 +316,7 @@ class XRayService : AccessibilityService() {
                 listener?.invoke()
             },
             onError = { msg ->
+                scan.dismiss()
                 busy = false
                 pendingOverlay = false
                 lastResult = null
