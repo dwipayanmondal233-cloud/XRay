@@ -26,6 +26,8 @@ class MainActivity : Activity() {
     private lateinit var image: ImageView
     private lateinit var scriptBtn: Button
     private lateinit var bubbleBtn: Button
+    private lateinit var shakeBtn: Button
+    private lateinit var sensBtn: Button
     private lateinit var listBox: LinearLayout
 
     private val green = Color.parseColor("#00FF9C")
@@ -82,6 +84,34 @@ class MainActivity : Activity() {
             render()
         }
         root.addView(bubbleBtn)
+
+        shakeBtn = makeButton("", green) {
+            val now = prefs().getBoolean("shake", false)
+            prefs().edit().putBoolean("shake", !now).apply()
+            val svc = XRayService.instance
+            if (svc == null) {
+                if (!now) {
+                    Toast.makeText(
+                        this,
+                        "Shake will work once the XRay service is ON.",
+                        Toast.LENGTH_LONG
+                    ).show()
+                }
+            } else {
+                svc.applyShake()
+            }
+            render()
+        }
+        root.addView(shakeBtn)
+
+        sensBtn = makeButton("", cyan) {
+            val now = prefs().getInt("sens", 1)
+            val next = (now + 1) % 3
+            prefs().edit().putInt("sens", next).apply()
+            XRayService.instance?.applyShake()
+            render()
+        }
+        root.addView(sensBtn)
 
         scriptBtn = makeButton("", cyan) {
             val now = prefs().getBoolean("deva", false)
@@ -163,12 +193,21 @@ class MainActivity : Activity() {
         imgLp.topMargin = dp(12)
         root.addView(image, imgLp)
 
+        val tip = TextView(this).apply {
+            text = "> Quick Settings tile: swipe down twice, tap the pencil, drag the XRay tile into your panel."
+            textSize = 12f
+            typeface = Typeface.MONOSPACE
+            setTextColor(Color.parseColor("#6B8A80"))
+            setPadding(0, dp(16), 0, 0)
+        }
+        root.addView(tip)
+
         val privacy = TextView(this).apply {
             text = "> Privacy: screenshots stay in memory only. Nothing is saved or sent anywhere."
             textSize = 12f
             typeface = Typeface.MONOSPACE
             setTextColor(Color.parseColor("#6B8A80"))
-            setPadding(0, dp(16), 0, 0)
+            setPadding(0, dp(8), 0, 0)
         }
         root.addView(privacy)
 
@@ -209,6 +248,15 @@ class MainActivity : Activity() {
         } else {
             bubbleBtn.text = "FLOATING BUBBLE: OFF (tap to turn on)"
         }
+
+        if (prefs().getBoolean("shake", false)) {
+            shakeBtn.text = "SHAKE TRIGGER: ON (tap to turn off)"
+        } else {
+            shakeBtn.text = "SHAKE TRIGGER: OFF (tap to turn on)"
+        }
+
+        val names = arrayOf("LOW (hard shake)", "MEDIUM", "HIGH (light shake)")
+        sensBtn.text = "SHAKE SENSITIVITY: " + names[prefs().getInt("sens", 1)]
 
         if (prefs().getBoolean("deva", false)) {
             scriptBtn.text = "OCR LANGUAGE: HINDI + ENGLISH (tap to switch)"

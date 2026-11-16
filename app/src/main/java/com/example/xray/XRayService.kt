@@ -1,11 +1,16 @@
 package com.example.xray
 
 import android.accessibilityservice.AccessibilityService
+import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.hardware.Sensor
+import android.hardware.SensorManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
 import android.view.Display
 import android.view.accessibility.AccessibilityEvent
@@ -27,12 +32,15 @@ class XRayService : AccessibilityService() {
     private var lastCaptureTime = 0L
     private var busy = false
     private var pendingOverlay = false
+    private var sensorManager: SensorManager? = null
+    private var shake: ShakeDetector? = null
 
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
         overlay.onDismissed = { restoreBubble() }
         applyBubble()
+        applyShake()
         listener?.invoke()
     }
 
@@ -48,6 +56,7 @@ class XRayService : AccessibilityService() {
     }
 
     override fun onUnbind(intent: Intent?): Boolean {
+        stopShake()
         overlay.dismiss()
         bubble.remove()
         if (instance === this) instance = null
@@ -56,6 +65,7 @@ class XRayService : AccessibilityService() {
     }
 
     override fun onDestroy() {
+        stopShake()
         overlay.dismiss()
         bubble.remove()
         if (instance === this) instance = null
@@ -82,12 +92,59 @@ class XRayService : AccessibilityService() {
         }
     }
 
+    fun applyShake() {
+        stopShake()
+        val p = getSharedPreferences("xray", MODE_PRIVATE)
+        if (!p.getBoolean("shake", false)) return
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (acc == null) {
+            Toast.makeText(this, "This device has no accelerometer.", Toast.LENGTH_LONG).show()
+            return
+        }
+        val d = ShakeDetector(p.getInt("sens", 1)) { onShake() }
+        sm.registerListener(d, acc, SensorManager.SENSOR_DELAY_GAME)
+        sensorManager = sm
+        shake = d
+    }
+
+    private fun stopShake() {
+        val d = shake
+        if (d != null) {
+            sensorManager?.unregisterListener(d)
+        }
+        shake = null
+    }
+
+    private fun onShake() {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        if (!pm.isInteractive) return
+        if (busy || overlay.isShowing()) return
+        xray(700)
+    }
+
     private fun onBubbleTap() {
         if (busy) {
             Toast.makeText(this, "Still working. Wait a moment.", Toast.LENGTH_SHORT).show()
             return
         }
         xray(150)
+    }
+
+    private fun collapseShade() {
+        if (Build.VERSION.SDK_INT >= 31) {
+            performGlobalAction(GLOBAL_ACTION_DISMISS_NOTIFICATION_SHADE)
+        } else {
+            try {
+                sendBroadcast(Intent(Intent.ACTION_CLOSE_SYSTEM_DIALOGS))
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    fun xrayFromShade() {
+        collapseShade()
+        xray(900)
     }
 
     fun captureDelayed(delayMs: Long) {
