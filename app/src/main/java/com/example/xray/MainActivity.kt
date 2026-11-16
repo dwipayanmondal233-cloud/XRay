@@ -151,6 +151,19 @@ class MainActivity : Activity() {
             }
         })
 
+        root.addView(makeButton("OPEN HISTORY", cyan) {
+            startActivity(Intent(this, HistoryActivity::class.java))
+        })
+
+        root.addView(makeButton("SHARE TEXT", cyan) {
+            val r = XRayService.lastResult
+            if (r == null || r.blocks.isEmpty()) {
+                Toast.makeText(this, "No text to share.", Toast.LENGTH_SHORT).show()
+            } else {
+                Sharer.send(this, r.allText())
+            }
+        })
+
         root.addView(makeButton("COPY ALL TEXT", green) {
             val r = XRayService.lastResult
             if (r == null || r.blocks.isEmpty()) {

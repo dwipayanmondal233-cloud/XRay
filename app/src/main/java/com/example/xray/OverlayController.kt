@@ -387,7 +387,7 @@ class OverlayController(private val service: AccessibilityService) {
             FrameLayout.LayoutParams.WRAP_CONTENT
         )
         lp.gravity = Gravity.BOTTOM
-        lp.bottomMargin = systemBarHeight("navigation_bar_height") + dp(80)
+        lp.bottomMargin = systemBarHeight("navigation_bar_height") + dp(130)
         lp.leftMargin = dp(10)
         lp.rightMargin = dp(10)
         host.addView(p, lp)
@@ -466,16 +466,22 @@ class OverlayController(private val service: AccessibilityService) {
         }
 
         val bar = LinearLayout(service)
-        bar.orientation = LinearLayout.HORIZONTAL
+        bar.orientation = LinearLayout.VERTICAL
         bar.setBackgroundColor(Color.parseColor("#DD05080A"))
         bar.setPadding(dp(4), dp(6), dp(4), dp(6))
 
+        val row1 = LinearLayout(service)
+        row1.orientation = LinearLayout.HORIZONTAL
         for (i in 0..2) {
             val b = makeButton(modeNames[i], cyan) { applyMode(i) }
             modeButtons.add(b)
-            bar.addView(b)
+            row1.addView(b)
         }
-        bar.addView(makeButton("COPY ALL", green) {
+        bar.addView(row1)
+
+        val row2 = LinearLayout(service)
+        row2.orientation = LinearLayout.HORIZONTAL
+        row2.addView(makeButton("COPY ALL", green) {
             val t = result.allText()
             if (t.isEmpty()) {
                 Toast.makeText(service, "No text to copy.", Toast.LENGTH_SHORT).show()
@@ -483,7 +489,22 @@ class OverlayController(private val service: AccessibilityService) {
                 copy(t)
             }
         })
-        bar.addView(makeButton("CLOSE", red) { dismiss() })
+        row2.addView(makeButton("SHARE", cyan) {
+            val t = result.allText()
+            if (t.isEmpty()) {
+                Toast.makeText(service, "No text to share.", Toast.LENGTH_SHORT).show()
+            } else {
+                Sharer.send(service, t)
+                dismiss()
+            }
+        })
+        row2.addView(makeButton("CLOSE", red) { dismiss() })
+        val row2Lp = LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        )
+        row2Lp.topMargin = dp(6)
+        bar.addView(row2, row2Lp)
 
         val barLp = FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,

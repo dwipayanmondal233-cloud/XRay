@@ -236,7 +236,8 @@ class XRayService : AccessibilityService() {
             deva,
             onDone = { r ->
                 busy = false
-                lastResult = r
+            lastResult = r
+                HistoryStore.addIfEnabled(this, r)
                 val status = if (r.blocks.isEmpty()) {
                     "No text found. (" + r.millis + " ms, " + r.script + ")"
                 } else {
