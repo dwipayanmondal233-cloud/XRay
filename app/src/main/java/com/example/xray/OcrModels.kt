@@ -28,4 +28,25 @@ data class OcrResult(
         }
         return sb.toString().trim()
     }
+
+    fun offset(dx: Int, dy: Int): OcrResult {
+        fun mv(r: Rect): Rect {
+            val n = Rect(r)
+            n.offset(dx, dy)
+            return n
+        }
+        val nb = ArrayList<OcrBlock>()
+        for (b in blocks) {
+            val nl = ArrayList<OcrLine>()
+            for (l in b.lines) {
+                val ne = ArrayList<OcrElement>()
+                for (e in l.elements) {
+                    ne.add(OcrElement(e.text, mv(e.box)))
+                }
+                nl.add(OcrLine(l.text, mv(l.box), ne))
+            }
+            nb.add(OcrBlock(b.text, mv(b.box), nl))
+        }
+        return OcrResult(nb, millis, script)
+    }
 }

@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Bitmap
+import android.graphics.Rect
 import android.hardware.Sensor
 import android.hardware.SensorManager
 import android.os.Build
@@ -28,6 +29,7 @@ class XRayService : AccessibilityService() {
 
     private val handler = Handler(Looper.getMainLooper())
     private val overlay = OverlayController(this)
+    private val regionSel = RegionSelector(this)
     private val bubble = BubbleController(this) { onBubbleTap() }
     private var lastCaptureTime = 0L
     private var busy = false
@@ -51,6 +53,7 @@ class XRayService : AccessibilityService() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         overlay.dismiss()
+        if (regionSel.isShowing()) regionSel.dismiss()
         bubble.remove()
         restoreBubble()
     }
@@ -58,6 +61,7 @@ class XRayService : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         stopShake()
         overlay.dismiss()
+        regionSel.dismiss()
         bubble.remove()
         if (instance === this) instance = null
         listener?.invoke()
@@ -67,26 +71,25 @@ class XRayService : AccessibilityService() {
     override fun onDestroy() {
         stopShake()
         overlay.dismiss()
+        regionSel.dismiss()
         bubble.remove()
         if (instance === this) instance = null
         super.onDestroy()
     }
 
-    private fun bubbleWanted(): Boolean {
-        return getSharedPreferences("xray", MODE_PRIVATE).getBoolean("bubble", false)
-    }
+    private fun prefs() = getSharedPreferences("xray", MODE_PRIVATE)
+
+    private fun bubbleWanted(): Boolean = prefs().getBoolean("bubble", false)
+
+    private fun regionWanted(): Boolean = prefs().getBoolean("region", false)
 
     fun applyBubble() {
-        if (bubbleWanted()) {
-            if (!overlay.isShowing()) bubble.show()
-        } else {
-            bubble.remove()
-        }
+        restoreBubble()
     }
 
     private fun restoreBubble() {
         if (bubbleWanted()) {
-            if (!overlay.isShowing()) bubble.show()
+            if (!overlay.isShowing() && !regionSel.isShowing()) bubble.show()
         } else {
             bubble.remove()
         }
@@ -94,7 +97,7 @@ class XRayService : AccessibilityService() {
 
     fun applyShake() {
         stopShake()
-        val p = getSharedPreferences("xray", MODE_PRIVATE)
+        val p = prefs()
         if (!p.getBoolean("shake", false)) return
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -119,7 +122,7 @@ class XRayService : AccessibilityService() {
     private fun onShake() {
         val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
         if (!pm.isInteractive) return
-        if (busy || overlay.isShowing()) return
+        if (busy || overlay.isShowing() || regionSel.isShowing()) return
         xray(700)
     }
 
@@ -153,6 +156,7 @@ class XRayService : AccessibilityService() {
 
     fun xray(delayMs: Long) {
         overlay.dismiss()
+        regionSel.dismiss()
         bubble.hide()
         val wait = if (delayMs < 200) 200L else delayMs
         handler.postDelayed({
@@ -209,9 +213,17 @@ class XRayService : AccessibilityService() {
                                 "Blank capture (" + bmp.width + "x" + bmp.height +
                                     "). This app may block screenshots, or the screen is one solid color."
                             )
+                        } else if (pendingOverlay && regionWanted()) {
+                            busy = false
+                            pendingOverlay = false
+                            lastBitmap = null
+                            lastResult = null
+                            lastStatus = "Select an area to scan."
+                            listener?.invoke()
+                            showRegion(bmp)
                         } else {
                             finish(bmp, "Captured " + bmp.width + "x" + bmp.height + ". Reading text...")
-                            runOcr(bmp)
+                            runOcr(bmp, null)
                         }
                     }
 
@@ -227,28 +239,65 @@ class XRayService : AccessibilityService() {
         }
     }
 
-    private fun runOcr(bmp: Bitmap) {
+    private fun showRegion(bmp: Bitmap) {
+        regionSel.show(
+            bmp,
+            onRegion = { r ->
+                busy = true
+                pendingOverlay = true
+                runOcr(bmp, r)
+            },
+            onFull = {
+                busy = true
+                pendingOverlay = true
+                runOcr(bmp, null)
+            },
+            onCancel = {
+                lastStatus = "Area selection cancelled."
+                restoreBubble()
+                listener?.invoke()
+            }
+        )
+    }
+
+    private fun runOcr(bmp: Bitmap, crop: Rect?) {
         val w = bmp.width
         val h = bmp.height
-        val deva = getSharedPreferences("xray", MODE_PRIVATE).getBoolean("deva", false)
+        var input = bmp
+        var ox = 0
+        var oy = 0
+        if (crop != null) {
+            try {
+                input = Bitmap.createBitmap(bmp, crop.left, crop.top, crop.width(), crop.height())
+                ox = crop.left
+                oy = crop.top
+            } catch (e: Exception) {
+                input = bmp
+                ox = 0
+                oy = 0
+            }
+        }
+        val deva = prefs().getBoolean("deva", false)
         OcrEngine.run(
-            bmp,
+            input,
             deva,
-            onDone = { r ->
+            onDone = { raw ->
                 busy = false
-            lastResult = r
+                val r = if (ox != 0 || oy != 0) raw.offset(ox, oy) else raw
+                lastResult = r
                 HistoryStore.addIfEnabled(this, r)
+                val where = if (crop != null) " (area)" else ""
                 val status = if (r.blocks.isEmpty()) {
-                    "No text found. (" + r.millis + " ms, " + r.script + ")"
+                    "No text found. (" + r.millis + " ms, " + r.script + ")" + where
                 } else {
-                    "Found " + r.lineCount() + " lines in " + r.millis + " ms (" + r.script + ")"
+                    "Found " + r.lineCount() + " lines in " + r.millis + " ms (" + r.script + ")" + where
                 }
                 lastStatus = status
                 if (pendingOverlay) {
                     pendingOverlay = false
                     lastBitmap = null
                     if (r.blocks.isEmpty()) {
-                        Toast.makeText(this, "No text found on this screen.", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this, "No text found in that area.", Toast.LENGTH_SHORT).show()
                         restoreBubble()
                     } else {
                         overlay.show(r, w, h)

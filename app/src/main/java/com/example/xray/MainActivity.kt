@@ -28,6 +28,7 @@ class MainActivity : Activity() {
     private lateinit var bubbleBtn: Button
     private lateinit var shakeBtn: Button
     private lateinit var sensBtn: Button
+    private lateinit var regionBtn: Button
     private lateinit var listBox: LinearLayout
 
     private val green = Color.parseColor("#00FF9C")
@@ -150,6 +151,22 @@ class MainActivity : Activity() {
                 moveTaskToBack(true)
             }
         })
+
+        fun regionLabel(on: Boolean): String {
+            return if (on) {
+                "REGION MODE: ON (drag a box, then scan)"
+            } else {
+                "REGION MODE: OFF (scan full screen)"
+            }
+        }
+
+        regionBtn = makeButton("", cyan) {
+            val now = prefs().getBoolean("region", false)
+            prefs().edit().putBoolean("region", !now).apply()
+            regionBtn.text = regionLabel(!now)
+        }
+        regionBtn.text = regionLabel(prefs().getBoolean("region", false))
+        root.addView(regionBtn)
 
         root.addView(makeButton("OPEN HISTORY", cyan) {
             startActivity(Intent(this, HistoryActivity::class.java))
